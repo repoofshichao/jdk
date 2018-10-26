@@ -1072,6 +1072,10 @@ public abstract class AbstractQueuedSynchronizer
      *         correctly.
      * @throws UnsupportedOperationException if exclusive mode is not supported
      */
+    /*
+     * 设计模式：模板类，
+     * tryAcquire的是实现放到子类中。
+     */
     protected boolean tryAcquire(int arg) {
         throw new UnsupportedOperationException();
     }
@@ -1193,6 +1197,12 @@ public abstract class AbstractQueuedSynchronizer
      * @param arg the acquire argument.  This value is conveyed to
      *        {@link #tryAcquire} but is otherwise uninterpreted and
      *        can represent anything you like.
+     */
+    /*
+     * 锁的获取分作3个步骤:
+     * 1.如果是非公平锁，则尝试获取锁，成功则返回。
+     * 2.锁获取失败，则进入到addWaiter方法。将创建一个Node,放到队列中。
+     * 3.acquireQueued会再次尝试获取锁，如果失败，则阻塞。
      */
     public final void acquire(int arg) {
         if (!tryAcquire(arg) &&
@@ -2256,6 +2266,10 @@ public abstract class AbstractQueuedSynchronizer
      * natively implement using hotspot intrinsics API. And while we
      * are at it, we do the same for other CASable fields (which could
      * otherwise be done with atomic field updaters).
+     */
+    /*
+     * jdk1.9 中使用VarHandle代替Unsafe，Unsafe与底层耦合，可移植性不好。
+     * VarHandle 的原理是内存屏障，相关的指令：loadload,storestore,loadstore,storeload.
      */
     private static final Unsafe unsafe = Unsafe.getUnsafe();
     private static final long stateOffset;
