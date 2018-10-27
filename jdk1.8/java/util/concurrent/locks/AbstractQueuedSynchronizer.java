@@ -602,6 +602,11 @@ public abstract class AbstractQueuedSynchronizer
      * @param mode Node.EXCLUSIVE for exclusive, Node.SHARED for shared
      * @return the new node
      */
+    /*
+     * 新建一个Node,并插入到队尾。
+     * 如果队尾是空，则直接进入enq
+     * 在enq中，创建一个head，并将node放在tail处。
+     */
     private Node addWaiter(Node mode) {
         Node node = new Node(Thread.currentThread(), mode);
         // Try the fast path of enq; backup to full enq on failure
@@ -853,6 +858,10 @@ public abstract class AbstractQueuedSynchronizer
      * @param node the node
      * @param arg the acquire argument
      * @return {@code true} if interrupted while waiting
+     */
+    /*
+     * acquireQueued是死循环，每次thread被唤醒后，都会检查是否在head之后，可以直接获取锁。
+     * 如果获取锁失败，则再次阻塞。
      */
     final boolean acquireQueued(final Node node, int arg) {
         boolean failed = true;
@@ -1203,6 +1212,10 @@ public abstract class AbstractQueuedSynchronizer
      * 1.如果是非公平锁，则尝试获取锁，成功则返回。
      * 2.锁获取失败，则进入到addWaiter方法。将创建一个Node,放到队列中。
      * 3.acquireQueued会再次尝试获取锁，如果失败，则阻塞。
+     * 如果一个thread获取了锁，则不会在队列中产生该thread的node。
+     * acquireQueued中是一个死循环，如果当前无法拿到锁，则进入阻塞状态。这和自旋是有区别的。
+     * 所以虽然jdk的锁使用了CLH，但是和CLH锁是有区别的，CLH锁是自旋的，
+     * 而JDK中是阻塞的。
      */
     public final void acquire(int arg) {
         if (!tryAcquire(arg) &&
