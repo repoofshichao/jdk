@@ -89,6 +89,12 @@ import java.util.*;
  * dynamically using {@link #setCorePoolSize} and {@link
  * #setMaximumPoolSize}. </dd>
  *
+ * 当新的任务被提交到线程池中，出现下面的情况时，会创建一个新的线程：
+ * 1.线程的数量小于corePoolSize
+ * 2.线程的数量大于corePoolSize，且任务队列已满，且线程的数量小于maximumPoolSize
+ * 如果设置corePoolSize,maximumPoolSize的大小相等，则相当于创建了一个线程数量固定的线程池。
+ * corePoolSize,maximumPoolSize的大小在构造函数中指定，也可以在后期修改。
+ *
  * <dt>On-demand construction</dt>
  *
  * <dd>By default, even core threads are initially created and
@@ -131,6 +137,12 @@ import java.util.*;
  * apply this time-out policy to core threads as well, so long as the
  * keepAliveTime value is non-zero. </dd>
  *
+ * 当线程数量大于 corePoolSize 的时候，且此时线程是空闲的，且空闲时间大于keepAliveTime,
+ * 这时空闲的线程会被回收掉。
+ * 当任务开始变多，且队列满了以后，还会创建新的线程，导致线程数目变多。
+ * 结论：线程的数量不会小于corePoolSize，且会根据任务的多寡动态变化。
+ * 也可以设置为：当线程数量小于 corePoolSize 时，回收线程。
+ *
  * <dt>Queuing</dt>
  *
  * <dd>Any {@link BlockingQueue} may be used to transfer and hold
@@ -142,14 +154,21 @@ import java.util.*;
  * always prefers adding a new thread
  * rather than queuing.</li>
  *
+ * 当线程数量小于 corePoolSize 时，有新的任务时会创建新的线程，即使此时线程池中的线程都是空闲的。
+ * 
  * <li> If corePoolSize or more threads are running, the Executor
  * always prefers queuing a request rather than adding a new
  * thread.</li>
+ *
+ * 当线程数量等于或者大于 corePoolSize 时，新的任务会被放到队列中。除非队列是满的。
  *
  * <li> If a request cannot be queued, a new thread is created unless
  * this would exceed maximumPoolSize, in which case, the task will be
  * rejected.</li>
  *
+ * 如果队列是满的，这时会创建一个线程来执行新的任务，除非线程数超过了 maximumPoolSize。
+ * 如果线程数超过了 maximumPoolSize，任务会被拒绝掉。
+ * 被拒绝的任务，触发回调的handler. 该handler可以自定义。
  * </ul>
  *
  * There are three general strategies for queuing:
@@ -165,6 +184,11 @@ import java.util.*;
  * avoid rejection of new submitted tasks. This in turn admits the
  * possibility of unbounded thread growth when commands continue to
  * arrive on average faster than they can be processed.  </li>
+ * 此类队列不存储任何的任务，当任务来到以后，需要线程马上处理。如果此时
+ * 没有空闲的线程，则拒绝任务。
+ * 适用场景：当任务之间有依赖的时候，采用此种队列。
+ * 当任务不断的到来，且超过了当前线程池的处理能力时，则线程会不断的创建。
+ * 此种情况，相当于队列的大小为0.
  *
  * <li><em> Unbounded queues.</em> Using an unbounded queue (for
  * example a {@link LinkedBlockingQueue} without a predefined
@@ -179,6 +203,10 @@ import java.util.*;
  * unbounded work queue growth when commands continue to arrive on
  * average faster than they can be processed.  </li>
  *
+ * 此类队列大小是无穷大。当线程数量达到corePoolSize的上限时，任务开始在队列中堆积。
+ * 且此后不会创建更多的线程。
+ * 适用场景：任务之间没有任何依赖。
+ *
  * <li><em>Bounded queues.</em> A bounded queue (for example, an
  * {@link ArrayBlockingQueue}) helps prevent resource exhaustion when
  * used with finite maximumPoolSizes, but can be more difficult to
@@ -191,6 +219,12 @@ import java.util.*;
  * generally requires larger pool sizes, which keeps CPUs busier but
  * may encounter unacceptable scheduling overhead, which also
  * decreases throughput.  </li>
+ *
+ * 此类队列是第三类, 是有上限的队列。且队列大小可以调整。
+ * 当队列容量大，线程数量小时，可以减少cpu、系统资源的占用，且有低的线程切换开销
+ * 会带来低的吞吐量。
+ * 当任务是IO繁忙的类型时，此时系统可以调度更多的线程。采用更小的队列，
+ * 更大的线程池，这时CPU繁忙，线程切换开销大，也会带来低的吞吐量。
  *
  * </ol>
  *
@@ -244,6 +278,8 @@ import java.util.*;
  * Additionally, method {@link #terminated} can be overridden to perform
  * any special processing that needs to be done once the Executor has
  * fully terminated.
+ * 系统提供了回调函数，供增强线程池的功能。比如beforeExecute、afterExecute
+ * 在执行任务的前后都可以执行用户自定义的代码。
  *
  * <p>If hook or callback methods throw exceptions, internal worker
  * threads may in turn fail and abruptly terminate.</dd>
@@ -266,6 +302,11 @@ import java.util.*;
  * that unused threads eventually die, by setting appropriate
  * keep-alive times, using a lower bound of zero core threads and/or
  * setting {@link #allowCoreThreadTimeOut(boolean)}.  </dd>
+ *
+ * 关于线程池的关闭：当一个线程池不被引用，且没有线程在运行的时候，
+ * 线程池可以自动关闭。
+ * 但是大多时候线程池的数量不会变为0. 即线程池不会自动关闭。
+ * 除非定义线程的keep-alive times，使线程自己空闲超时后自动消亡。
  *
  * </dl>
  *
@@ -329,6 +370,8 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * the future, the variable can be changed to be an AtomicLong,
      * and the shift/mask constants below adjusted. But until the need
      * arises, this code is a bit faster and simpler using an int.
+     *
+     * 关于可以创建的最大线程数：(2^29)-1
      *
      * The workerCount is the number of workers that have been
      * permitted to start and not permitted to stop.  The value may be
@@ -876,6 +919,10 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * creation fails, either due to the thread factory returning
      * null, or due to an exception (typically OutOfMemoryError in
      * Thread.start()), we roll back cleanly.
+     * 
+     * 此函数中的处理共分作两步骤：
+     * 1.增加work count
+     * 2.
      *
      * @param firstTask the task the new thread should run first (or
      * null if none). Workers are created with an initial first task
