@@ -649,13 +649,19 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
          * Creates with given first task and thread from ThreadFactory.
          * @param firstTask the first task (null if none)
          */
+        /**
+         * 创建一个新的线程，并把一个runner的对象作为参数传入。则调用t.start时，会执行此
+         * runner对象的run方法。
+        */
         Worker(Runnable firstTask) {
             setState(-1); // inhibit interrupts until runWorker
             this.firstTask = firstTask;
             this.thread = getThreadFactory().newThread(this);
         }
 
-        /** Delegates main run loop to outer runWorker  */
+        /** Delegates main run loop to outer runWorker 
+         * 执行run方法，会调用外层的runWorker。
+         */
         public void run() {
             runWorker(this);
         }
@@ -922,7 +928,8 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * 
      * 此函数中的处理共分作两步骤：
      * 1.增加work count
-     * 2.
+     * 2.创建一个新的Worker，并调用t.start。调用t.start后，会异步执行
+     *   runWorker。
      *
      * @param firstTask the task the new thread should run first (or
      * null if none). Workers are created with an initial first task
@@ -943,14 +950,14 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
         for (;;) {
             int c = ctl.get();
             int rs = runStateOf(c);
-
+              //判断线程池状态，不为running状态，则不能添加线程。
             // Check if queue empty only if necessary.
-            if (rs >= SHUTDOWN &&
-                ! (rs == SHUTDOWN &&
-                   firstTask == null &&
+            if (rs >= SHUTDOWN &&     //不在running状态且
+                ! (rs == SHUTDOWN &&  //！（在shutdown状态，且任务参数为空且队列不空），这时不能添加新的thread.
+                   firstTask == null && //在shutdown状态，且任务参数为空且队列不空是可以添加thread的。
                    ! workQueue.isEmpty()))
                 return false;
-
+            //第一步自旋增加worker 数量。
             for (;;) {
                 int wc = workerCountOf(c);
                 if (wc >= CAPACITY ||
@@ -959,7 +966,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                 if (compareAndIncrementWorkerCount(c))
                     break retry;
                 c = ctl.get();  // Re-read ctl
-                if (runStateOf(c) != rs)
+                if (runStateOf(c) != rs) //线程池状态有变化，则重新判断是否允许添加线程。
                     continue retry;
                 // else CAS failed due to workerCount change; retry inner loop
             }
@@ -994,7 +1001,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                     mainLock.unlock();
                 }
                 if (workerAdded) {
-                    t.start();
+                    t.start();//启动线程
                     workerStarted = true;
                 }
             }
@@ -1172,6 +1179,9 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
         boolean completedAbruptly = true;
         try {
             while (task != null || (task = getTask()) != null) {
+                //此处是一个while死循环，当第一次执行时，如果task不为空，则执行task任务。
+                //第二次循环时，task为空，则调用getTask().
+                //getTask会阻塞。阻塞的时间根据keepAliveTime的不同，有不同的结果。
                 w.lock();
                 // If pool is stopping, ensure thread is interrupted;
                 // if not, ensure thread is not interrupted.  This
@@ -1388,6 +1398,10 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
          * workerCount, and so prevents false alarms that would add
          * threads when it shouldn't, by returning false.
          *
+         * 1.线程数量小于corePoolSize，则往线程池中增加线程。即调用addWorker，
+         * 每次调用execute，即使有空闲的线程，只要满足条件都会创建线程。
+         * 在addWorker内部还会再次验证runState和workerCount。
+         *
          * 2. If a task can be successfully queued, then we still need
          * to double-check whether we should have added a thread
          * (because existing ones died since last checking) or that
@@ -1395,9 +1409,14 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
          * recheck state and if necessary roll back the enqueuing if
          * stopped, or start a new thread if there are none.
          *
+         * 2.如果达到上限，且队列还有空间，则将任务放入队列。
+         *   这里的offer是非阻塞的。
+         *
          * 3. If we cannot queue task, then we try to add a new
          * thread.  If it fails, we know we are shut down or saturated
          * and so reject the task.
+         *
+         * 3.队列也满的情况下，创建线程。如果超过maximumPoolSize,则拒绝任务。
          */
         int c = ctl.get();
         if (workerCountOf(c) < corePoolSize) {
