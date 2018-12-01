@@ -991,6 +991,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                         (rs == SHUTDOWN && firstTask == null)) {
                         if (t.isAlive()) // precheck that t is startable
                             throw new IllegalThreadStateException();
+                        //workers为一个hashset，其中存放了所有的work，work对thread包装了一层。
                         workers.add(w);
                         int s = workers.size();
                         if (s > largestPoolSize)
@@ -1182,6 +1183,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                 //此处是一个while死循环，当第一次执行时，如果task不为空，则执行task任务。
                 //第二次循环时，task为空，则调用getTask().
                 //getTask会阻塞。阻塞的时间根据keepAliveTime的不同，有不同的结果。
+                //如果返回为空，则循环结束。则线程也结束退出。
                 w.lock();
                 // If pool is stopping, ensure thread is interrupted;
                 // if not, ensure thread is not interrupted.  This
